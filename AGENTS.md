@@ -13,6 +13,10 @@ an AzerothCore fork. The fork's `AGENTS.md` and `.agents/docs/` apply as a base;
 for paths under this module, this file and `.agents/docs/` win where they differ.
 The fork's SQL placement, `--author` attribution, and e2e rules do not apply here.
 
+## Local git workflow
+
+This directory is its own git repo. Commit module changes here on branch `my-server` (tracks `origin/master`); update with `git pull`. Core changes belong to the parent repo's `my-server` branch.
+
 ## Agent rules
 
 - **Do not configure or build unless explicitly asked.** Builds are slow and rarely
