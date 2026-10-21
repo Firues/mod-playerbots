@@ -244,6 +244,34 @@ bool PlayerbotAIConfig::Initialize()
     RandomBotAutologin = sConfigMgr->GetOption<bool>("Playerbots.RandomBotAutologin", true);
     MinRandomBots = sConfigMgr->GetOption<int32>("Playerbots.MinRandomBots", 500);
     MaxRandomBots = sConfigMgr->GetOption<int32>("Playerbots.MaxRandomBots", 500);
+
+    LODEnabled = sConfigMgr->GetOption<bool>("Playerbots.LOD.Enabled", false);
+    LODPopulation = sConfigMgr->GetOption<uint32>("Playerbots.LOD.Population", 10000);
+    LODMaxActiveBots = sConfigMgr->GetOption<uint32>("Playerbots.LOD.MaxActiveBots", 300);
+    LODUpdateInterval = sConfigMgr->GetOption<uint32>("Playerbots.LOD.UpdateInterval", 1000);
+    LODActiveRadius = sConfigMgr->GetOption<float>("Playerbots.LOD.ActiveRadius", 250.0f);
+    LODDeactivateRadius = sConfigMgr->GetOption<float>("Playerbots.LOD.DeactivateRadius", 400.0f);
+    LODDematerializeDelay = sConfigMgr->GetOption<uint32>("Playerbots.LOD.DematerializeDelay", 60);
+    LODMaxLoginsPerTick = sConfigMgr->GetOption<uint32>("Playerbots.LOD.MaxLoginsPerTick", 10);
+    LODMaxLogoutsPerTick = sConfigMgr->GetOption<uint32>("Playerbots.LOD.MaxLogoutsPerTick", 10);
+    LODColdTickInterval = sConfigMgr->GetOption<uint32>("Playerbots.LOD.ColdTickInterval", 30);
+    LODColdWanderRadius = sConfigMgr->GetOption<float>("Playerbots.LOD.ColdWanderRadius", 150.0f);
+    LODColdMoveSpeed = sConfigMgr->GetOption<float>("Playerbots.LOD.ColdMoveSpeed", 7.0f);
+
+    if (LODPopulation && LODMaxActiveBots > LODPopulation)
+        LODMaxActiveBots = LODPopulation;
+    if (LODEnabled && !LODMaxActiveBots)
+        LODMaxActiveBots = 1;
+    if (LODDeactivateRadius < LODActiveRadius)
+        LODDeactivateRadius = LODActiveRadius;
+    LODUpdateInterval = std::max<uint32>(LODUpdateInterval, 1000);
+    LODDematerializeDelay = std::max<uint32>(LODDematerializeDelay, 5);
+    LODColdTickInterval = std::max<uint32>(LODColdTickInterval, 5);
+    LODMaxLoginsPerTick = std::max<uint32>(LODMaxLoginsPerTick, 1);
+    LODMaxLogoutsPerTick = std::max<uint32>(LODMaxLogoutsPerTick, 1);
+    LODColdWanderRadius = std::max<float>(LODColdWanderRadius, 1.0f);
+    LODColdMoveSpeed = std::max<float>(LODColdMoveSpeed, 0.1f);
+
     RandomBotUpdateInterval = sConfigMgr->GetOption<int32>("Playerbots.RandomBotUpdateInterval", 20);
     RandomBotCountChangeMinInterval =
         sConfigMgr->GetOption<int32>("Playerbots.RandomBotCountChangeMinInterval", 30 * MINUTE);

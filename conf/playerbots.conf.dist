@@ -89,6 +89,49 @@ Playerbots.RandomBotAutologin = 1
 Playerbots.MinRandomBots = 500
 Playerbots.MaxRandomBots = 500
 
+# Bot level-of-detail population.
+# When enabled, only bots near real players are full Players with AI. The rest
+# are compact records and do not load maps, sessions, or AI. This is what lets a
+# large configured population fit in a small amount of RAM.
+# Keep this disabled until the worldserver has been tested with the new mode.
+Playerbots.LOD.Enabled = 0
+
+# Total number of compact bot records to load. When LOD is enabled this value
+# also decides how many random bot characters accounts are created for.
+Playerbots.LOD.Population = 10000
+
+# Maximum number of bots that may be materialized at once. Each one costs a full
+# Player, WorldSession, PlayerbotAI, and map presence.
+Playerbots.LOD.MaxActiveBots = 300
+
+# How often hot/cold selection runs, in milliseconds. Minimum: 1000.
+Playerbots.LOD.UpdateInterval = 1000
+
+# A cold bot is materialized when a real player is within this distance (yards).
+Playerbots.LOD.ActiveRadius = 250
+
+# A hot bot is kept while a real player is within this distance (yards). Must be
+# at least ActiveRadius; the gap provides hysteresis.
+Playerbots.LOD.DeactivateRadius = 400
+
+# Seconds a hot bot stays materialized after the last nearby real player leaves.
+Playerbots.LOD.DematerializeDelay = 60
+
+# Maximum number of bot logins started per selection tick.
+Playerbots.LOD.MaxLoginsPerTick = 10
+
+# Maximum number of bot logouts started per selection tick.
+Playerbots.LOD.MaxLogoutsPerTick = 10
+
+# How often cold bots pick a new wander target, in seconds. Minimum: 5.
+Playerbots.LOD.ColdTickInterval = 30
+
+# Maximum wander distance from the current cold position, in yards.
+Playerbots.LOD.ColdWanderRadius = 150
+
+# Cold wander speed in yards per second. Cold bots do not use collision or mmaps.
+Playerbots.LOD.ColdMoveSpeed = 7.0
+
 # Randombot accounts
 # Set to 0 to automatically calculate needed accounts based on MaxRandomBots, EnablePeriodicOnlineOffline
 # and its ratio, and AddClassAccountPoolSize. Set manually if you want to create more accounts than needed.

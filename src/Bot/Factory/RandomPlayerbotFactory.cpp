@@ -391,8 +391,12 @@ uint32 RandomPlayerbotFactory::CalculateTotalAccountCount()
     // Determine divisor based on Death Knight availability and requested A&H faction ratio
     int divisor = CalculateAvailableCharsPerAccount();
 
-    // Calculate max bots
+    // Calculate max bots. With LOD enabled the configured population is the
+    // number of character records that must exist, not the number online.
     int maxBots = sPlayerbotAIConfig.MaxRandomBots;
+    if (sPlayerbotAIConfig.Enabled && sPlayerbotAIConfig.LODEnabled && sPlayerbotAIConfig.LODPopulation)
+        maxBots = sPlayerbotAIConfig.LODPopulation;
+
     // Take periodic online/offline into account
     if (sPlayerbotAIConfig.EnablePeriodicOnlineOffline)
         maxBots *= sPlayerbotAIConfig.PeriodicOnlineOfflineRatio;

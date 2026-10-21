@@ -21,6 +21,7 @@
 #include "GuildTaskMgr.h"
 #include "PlayerScript.h"
 #include "PlayerbotAIConfig.h"
+#include "BotLODMgr.h"
 #include "PlayerbotCommandScript.h"
 #include "PlayerbotGuildMgr.h"
 #include "PlayerbotSpellRepository.h"
@@ -502,6 +503,7 @@ class PlayerbotsWorldScript : public WorldScript
 public:
     PlayerbotsWorldScript() : WorldScript("PlayerbotsWorldScript", {
         WORLDHOOK_ON_BEFORE_WORLD_INITIALIZED,
+        WORLDHOOK_ON_STARTUP,
         WORLDHOOK_ON_UPDATE,
         WORLDHOOK_ON_SHUTDOWN
     }) {}
@@ -542,6 +544,11 @@ public:
         LOG_INFO("server.loading", "Playerbots World Thread Processor initialized");
     }
 
+    void OnStartup() override
+    {
+        sBotLODMgr.Initialize();
+    }
+
     void OnUpdate(uint32 diff) override
     {
         PlayerbotHolder::UpdatePendingLogins();  // Headless sessions whose login holder is in flight
@@ -555,6 +562,7 @@ public:
     {
         LOG_INFO("playerbots", "Logging out all bots...");
         sRandomPlayerbotMgr.LogoutAllBots();
+        sBotLODMgr.Shutdown();
         PlayerbotHolder::ClearPendingLogins();
     }
 };

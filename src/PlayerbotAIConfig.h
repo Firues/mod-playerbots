@@ -163,6 +163,21 @@ public:
     float RandomBotMinLevelChance, RandomBotMaxLevelChance;
     float RandomBotRpgChance;
     uint32 MinRandomBots, MaxRandomBots;
+
+    // Bot level-of-detail population. Only bots near real players are full Players.
+    bool LODEnabled;
+    uint32 LODPopulation;
+    uint32 LODMaxActiveBots;
+    uint32 LODUpdateInterval;
+    float LODActiveRadius;
+    float LODDeactivateRadius;
+    uint32 LODDematerializeDelay;
+    uint32 LODMaxLoginsPerTick;
+    uint32 LODMaxLogoutsPerTick;
+    uint32 LODColdTickInterval;
+    float LODColdWanderRadius;
+    float LODColdMoveSpeed;
+
     uint32 RandomBotUpdateInterval, RandomBotCountChangeMinInterval, RandomBotCountChangeMaxInterval;
     uint32 MinRandomBotInWorldTime, MaxRandomBotInWorldTime;
     uint32 MinRandomBotRandomizeTime, MaxRandomBotRandomizeTime;

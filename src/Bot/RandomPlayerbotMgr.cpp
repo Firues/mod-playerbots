@@ -28,6 +28,7 @@
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
+#include "BotLODMgr.h"
 #include "PlayerbotFactory.h"
 #include "PlayerbotTextMgr.h"
 #include "Playerbots.h"
@@ -170,7 +171,13 @@ double botPIDImpl::calculate(double setpoint, double pv)
 
 botPIDImpl::~botPIDImpl() {}
 
-uint32 RandomPlayerbotMgr::GetMaxAllowedBotCount() { return GetEventValue(0, "bot_count"); }
+uint32 RandomPlayerbotMgr::GetMaxAllowedBotCount()
+{
+    if (sBotLODMgr.IsEnabled())
+        return sPlayerbotAIConfig.LODMaxActiveBots;
+
+    return GetEventValue(0, "bot_count");
+}
 
 void RandomPlayerbotMgr::LogPlayerLocation()
 {
@@ -279,8 +286,15 @@ void RandomPlayerbotMgr::LogPlayerLocation()
     }
 }
 
-void RandomPlayerbotMgr::UpdateAIInternal(uint32 /*elapsed*/, bool /*minimal*/)
+void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool /*minimal*/)
 {
+    if (sBotLODMgr.IsEnabled())
+    {
+        sBotLODMgr.Update(elapsed);
+        SetNextCheckDelay(std::max<uint32>(sPlayerbotAIConfig.LODUpdateInterval, 1000));
+        return;
+    }
+
     if (totalPmo)
         totalPmo->finish();
 
@@ -2260,6 +2274,11 @@ bool RandomPlayerbotMgr::IsRandomBot(ObjectGuid::LowType bot)
     return currentBots.contains(bot);
 }
 
+void RandomPlayerbotMgr::RegisterRandomBot(ObjectGuid::LowType guid)
+{
+    currentBots.insert(guid);
+}
+
 bool RandomPlayerbotMgr::IsAddclassBot(Player* bot)
 {
     if (bot && GET_PLAYERBOT_AI(bot))
@@ -2498,7 +2517,7 @@ void RandomPlayerbotMgr::SetValue(Player* bot, std::string const& type, uint32 v
     SetValue(bot->GetGUID().GetCounter(), type, value, data);
 }
 
-bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* /*handler*/, char const* args)
+bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* handler, char const* args)
 {
     if (!sPlayerbotAIConfig.Enabled)
     {
@@ -2508,7 +2527,7 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* /*handler*/,
 
     if (!args || !*args)
     {
-        LOG_ERROR("playerbots", "Usage: rndbot stats/update/reset/init/refresh/add/remove");
+        LOG_ERROR("playerbots", "Usage: rndbot stats/lod/update/reset/init/refresh/add/remove");
         return false;
     }
 
@@ -2526,6 +2545,12 @@ bool RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(ChatHandler* /*handler*/,
     {
         sRandomPlayerbotMgr.PrintStats();
         // activatePrintStatsThread();
+        return true;
+    }
+
+    if (cmd == "lod")
+    {
+        sBotLODMgr.PrintStats(handler);
         return true;
     }
 
@@ -2668,6 +2693,8 @@ void RandomPlayerbotMgr::OnPlayerLogout(Player* player)
 
 void RandomPlayerbotMgr::OnBotLoginInternal(Player* const bot)
 {
+    currentBots.insert(bot->GetGUID().GetCounter());
+
     if (_isBotLogging)
     {
         LOG_INFO("playerbots", "{}/{} Bot {} logged in", playerBots.size(),

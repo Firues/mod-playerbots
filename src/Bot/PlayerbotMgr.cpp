@@ -5,6 +5,7 @@
  */
 
 #include "PlayerbotMgr.h"
+#include "BotLODMgr.h"
 #include "PlayerbotsDatabase.h"
 #include "BroadcastHelper.h"
 #include "ChannelMgr.h"
@@ -404,6 +405,7 @@ void PlayerbotHolder::LogoutPlayerBot(ObjectGuid guid)
         PlayerbotWorldThreadProcessor::instance().QueueOperation(std::move(cleanupOp));
 
         LOG_DEBUG("playerbots", "Bot {} logging out", bot->GetName().c_str());
+        sBotLODMgr.OnBotLogout(bot);
 
         // Remove taxi cheat flag on alts.
         if (!sRandomPlayerbotMgr.IsRandomBot(bot) && bot->isTaxiCheater())
@@ -476,6 +478,7 @@ void PlayerbotHolder::DisablePlayerBot(ObjectGuid guid)
         }
 
         LOG_DEBUG("playerbots", "Bot {} logged out", bot->GetName().c_str());
+        sBotLODMgr.OnBotLogout(bot);
 
         bot->SaveToDB(false, false);
 
@@ -515,6 +518,7 @@ void PlayerbotHolder::OnBotLogin(Player* const bot)
     playerBots[bot->GetGUID()] = bot;
 
     OnBotLoginInternal(bot);
+    sBotLODMgr.OnBotLogin(bot);
 
     PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
     if (!botAI)
