@@ -132,6 +132,29 @@ Playerbots.LOD.ColdWanderRadius = 150
 # Cold wander speed in yards per second. Cold bots do not use collision or mmaps.
 Playerbots.LOD.ColdMoveSpeed = 7.0
 
+# Steer the cold population toward real players: when a player's zone holds fewer
+# bots than BotsNearPlayerTarget, relocate cold records (data only) into the player's
+# zone at random points around them. Records in faction-controlled zones are matched
+# to the zone's faction, mirroring the teleport rules in RandomTeleport.
+# Default: 0 (disabled)
+Playerbots.LOD.ConcentrateInPlayerZone = 0
+
+# How far from the player relocated records are placed, in yards. Clamped to
+# ActiveRadius so relocated records materialize on the next pass.
+# Default: 250
+Playerbots.LOD.ConcentrateRadius = 250
+
+# Minimum number of records (hot or cold) to keep within ActiveRadius of each real
+# player while ConcentrateInPlayerZone is enabled. 0 disables the target check.
+# Default: 30
+Playerbots.LOD.BotsNearPlayerTarget = 30
+
+# Seconds after death before a materialized bot is resurrected in place. CanDematerialize
+# rejects the dead, so without a revive pass killed bots would occupy MaxActiveBots slots
+# forever. 0 disables reviving.
+# Default: 60
+Playerbots.LOD.ReviveDelay = 60
+
 # Randombot accounts
 # Set to 0 to automatically calculate needed accounts based on MaxRandomBots and AddClassAccountPoolSize.
 # Set manually if you want to create more accounts than needed.

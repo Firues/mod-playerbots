@@ -11,6 +11,7 @@
 
 #include <ctime>
 #include <unordered_map>
+#include <vector>
 
 class ChatHandler;
 class Player;
@@ -42,14 +43,29 @@ private:
 
     void LoadRecords();
     void RefreshHotSet(time_t now);
+    void ConcentrateRecords(time_t now);
+    void ReviveDead(time_t now);
     void UpdateCold(uint32 diff);
     void ClearStalePending(time_t now);
     bool Materialize(BotRecord& record, time_t now);
     void Dematerialize(BotRecord& record, time_t now);
     [[nodiscard]] bool CanDematerialize(Player* bot) const;
 
+    // Snapshot of the real (non-headless) players LOD steers the crowd around, refreshed
+    // by RefreshHotSet each LOD tick.
+    struct RealPlayerPosition
+    {
+        uint32 mapId = 0;
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        uint32 zoneId = 0;
+    };
+
     std::unordered_map<ObjectGuid::LowType, BotRecord> _records;
     std::unordered_map<ObjectGuid::LowType, time_t> _pendingSince;
+    std::unordered_map<ObjectGuid::LowType, time_t> _deadSince;
+    std::vector<RealPlayerPosition> _players;
     bool _enabled = false;
     uint32 _lastUpdateMs = 0;
     uint32 _lastColdMs = 0;

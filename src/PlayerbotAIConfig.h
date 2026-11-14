@@ -180,6 +180,13 @@ public:
     uint32 LODColdTickInterval;
     float LODColdWanderRadius;
     float LODColdMoveSpeed;
+    // Crowd steering: keep a minimum number of records around real players so every zone they
+    // visit feels populated, and bring killed bots back after a delay so corpses never occupy
+    // MaxActiveBots slots forever.
+    bool LODConcentrateInPlayerZone;
+    uint32 LODConcentrateRadius;
+    uint32 LODBotsNearPlayerTarget;
+    uint32 LODReviveDelay;
 
     uint32 RandomBotUpdateInterval, RandomBotCountChangeMinInterval, RandomBotCountChangeMaxInterval;
     uint32 RandomBotCountMinTime, RandomBotCountMaxTime;

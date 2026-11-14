@@ -12,6 +12,7 @@
 #include "GridTerrainData.h"
 #include "Log.h"
 #include "Map.h"
+#include "MapMgr.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -38,12 +39,21 @@ constexpr uint32 LOD_ACCOUNT_QUERY_CHUNK = 500;
 constexpr uint32 LOD_PENDING_TIMEOUT = 30;
 constexpr float LOD_TWO_PI = 6.2831853f;
 
-struct RealPlayerPosition
+// AreaTableEntry::team: 2 = Alliance-controlled, 4 = Horde-controlled, anything else is shared.
+bool IsAllianceRace(uint8 race)
 {
-    uint32 mapId;
-    float x;
-    float y;
-};
+    return race == RACE_HUMAN || race == RACE_DWARF || race == RACE_NIGHTELF || race == RACE_GNOME ||
+           race == RACE_DRAENEI;
+}
+
+bool RaceAllowedInZone(uint8 race, int32 zoneTeam)
+{
+    if (zoneTeam == 4)
+        return !IsAllianceRace(race);
+    if (zoneTeam == 2)
+        return IsAllianceRace(race);
+    return true;
+}
 }
 
 BotLODMgr& BotLODMgr::Instance()
@@ -57,6 +67,8 @@ void BotLODMgr::Initialize()
     _enabled = sPlayerbotAIConfig.LODEnabled && sPlayerbotAIConfig.Enabled;
     _records.clear();
     _pendingSince.clear();
+    _deadSince.clear();
+    _players.clear();
     _lastUpdateMs = getMSTime();
     _lastColdMs = _lastUpdateMs;
 
@@ -164,6 +176,8 @@ void BotLODMgr::Shutdown()
 
     _records.clear();
     _pendingSince.clear();
+    _deadSince.clear();
+    _players.clear();
     _enabled = false;
 }
 
@@ -188,12 +202,14 @@ void BotLODMgr::Update(uint32 /*diff*/)
 
     time_t const now = time(nullptr);
     ClearStalePending(now);
+    ReviveDead(now);
     RefreshHotSet(now);
+    ConcentrateRecords(now);
 }
 
 void BotLODMgr::RefreshHotSet(time_t now)
 {
-    std::vector<RealPlayerPosition> players;
+    _players.clear();
     for (auto const& entry : ObjectAccessor::GetPlayers())
     {
         Player* player = entry.second;
@@ -215,7 +231,9 @@ void BotLODMgr::RefreshHotSet(time_t now)
             std::find(allowedMaps.begin(), allowedMaps.end(), map->GetId()) == allowedMaps.end())
             continue;
 
-        players.push_back({map->GetId(), player->GetPositionX(), player->GetPositionY()});
+        _players.push_back({map->GetId(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(),
+                            map->GetZoneId(PHASEMASK_NORMAL, player->GetPositionX(), player->GetPositionY(),
+                                           player->GetPositionZ())});
     }
 
     float const activeSq = sPlayerbotAIConfig.LODActiveRadius * sPlayerbotAIConfig.LODActiveRadius;
@@ -237,7 +255,7 @@ void BotLODMgr::RefreshHotSet(time_t now)
         BotRecord& record = entry.second;
         record.nearestPlayerSq = std::numeric_limits<float>::max();
 
-        for (RealPlayerPosition const& player : players)
+        for (RealPlayerPosition const& player : _players)
         {
             if (player.mapId != record.mapId)
                 continue;
@@ -288,6 +306,174 @@ void BotLODMgr::RefreshHotSet(time_t now)
 
         --loginBudget;
         ++hotCount;
+    }
+}
+
+// Crowd steering: keep a minimum number of records around each real player so every zone they
+// visit feels populated. Cold records are cheap to move - only their position fields change -
+// and they materialize into full bots on a following tick once inside the active radius.
+void BotLODMgr::ConcentrateRecords(time_t /*now*/)
+{
+    if (!sPlayerbotAIConfig.LODConcentrateInPlayerZone || !sPlayerbotAIConfig.LODBotsNearPlayerTarget ||
+        _players.empty())
+        return;
+
+    float const activeSq = sPlayerbotAIConfig.LODActiveRadius * sPlayerbotAIConfig.LODActiveRadius;
+    // Place inside the materialization radius (with margin) so relocated records qualify as
+    // hot on the next pass. LODConcentrateRadius is clamped to LODActiveRadius at config load.
+    float const spread = std::max(20.0f, sPlayerbotAIConfig.LODConcentrateRadius * 0.9f);
+    uint32 budget = sPlayerbotAIConfig.LODMaxLoginsPerTick;
+
+    for (RealPlayerPosition const& player : _players)
+    {
+        Map* map = sMapMgr->FindBaseMap(player.mapId);
+        if (!map)
+            continue;
+
+        AreaTableEntry const* zone = sAreaTableStore.LookupEntry(player.zoneId);
+
+        // Count every record near this player, online or not: materialized bots keep counting
+        // once hot, otherwise the deficit would keep pulling fresh records every tick.
+        uint32 nearCount = 0;
+        for (auto const& entry : _records)
+        {
+            BotRecord const& record = entry.second;
+            if (record.mapId != player.mapId)
+                continue;
+
+            if (record.online)
+            {
+                Player* bot = sRandomPlayerbotMgr.GetPlayerBot(record.guid);
+                if (!bot || bot->GetMapId() != player.mapId)
+                    continue;
+
+                float const bdx = bot->GetPositionX() - player.x;
+                float const bdy = bot->GetPositionY() - player.y;
+                if (bdx * bdx + bdy * bdy <= activeSq)
+                    ++nearCount;
+            }
+            else
+            {
+                float const rdx = record.x - player.x;
+                float const rdy = record.y - player.y;
+                if (rdx * rdx + rdy * rdy <= activeSq)
+                    ++nearCount;
+            }
+        }
+
+        if (nearCount >= sPlayerbotAIConfig.LODBotsNearPlayerTarget)
+            continue;
+
+        uint32 deficit = sPlayerbotAIConfig.LODBotsNearPlayerTarget - nearCount;
+        if (deficit > budget)
+            deficit = budget;
+
+        std::vector<ObjectGuid::LowType> eligible;
+        for (auto const& entry : _records)
+        {
+            BotRecord const& record = entry.second;
+            if (record.online || _pendingSince.contains(record.guid))
+                continue;
+
+            float const dx = record.x - player.x;
+            float const dy = record.y - player.y;
+            if (record.mapId == player.mapId && dx * dx + dy * dy <= activeSq)
+                continue;
+
+            // Respect faction-controlled zones, matching the teleport checks in RandomTeleport.
+            if (zone && !RaceAllowedInZone(record.race, zone->team))
+                continue;
+
+            eligible.push_back(record.guid);
+        }
+
+        while (deficit && !eligible.empty())
+        {
+            size_t const idx = urand(0, eligible.size() - 1);
+            auto it = _records.find(eligible[idx]);
+            eligible[idx] = eligible.back();
+            eligible.pop_back();
+
+            if (it == _records.end())
+                continue;
+
+            BotRecord& record = it->second;
+            float const angle = frand(0.0f, LOD_TWO_PI);
+            float const distance = frand(20.0f, spread);
+            float const x = player.x + std::cos(angle) * distance;
+            float const y = player.y + std::sin(angle) * distance;
+
+            // The grid may not be loaded here; materialization re-checks the height on login
+            // (OnBotLogin) and falls back to the stored z, so an approximate z is fine.
+            float z = map->GetHeight(PHASEMASK_NORMAL, x, y, player.z, true, MAX_HEIGHT);
+            if (z <= INVALID_HEIGHT)
+                z = player.z;
+
+            record.mapId = player.mapId;
+            record.zoneId = player.zoneId;
+            record.x = x;
+            record.y = y;
+            record.z = z;
+            record.orientation = frand(0.0f, LOD_TWO_PI);
+            record.hasTarget = false;
+            record.targetX = x;
+            record.targetY = y;
+            record.targetZ = z;
+
+            --deficit;
+            --budget;
+        }
+
+        if (!budget)
+        {
+            LOG_DEBUG("playerbots", "Bot LOD: concentration relocation budget exhausted this tick");
+            break;
+        }
+    }
+}
+
+// Bring killed bots back after a delay. CanDematerialize rejects the dead, so without this a
+// bot killed by a player would stay materialized forever, occupying a MaxActiveBots slot.
+void BotLODMgr::ReviveDead(time_t now)
+{
+    if (!sPlayerbotAIConfig.LODReviveDelay)
+        return;
+
+    for (auto& entry : _records)
+    {
+        BotRecord& record = entry.second;
+        if (!record.online)
+        {
+            _deadSince.erase(entry.first);
+            continue;
+        }
+
+        Player* bot = sRandomPlayerbotMgr.GetPlayerBot(record.guid);
+        if (!bot || !bot->IsInWorld() || !bot->isDead())
+        {
+            _deadSince.erase(entry.first);
+            continue;
+        }
+
+        if (bot->IsInCombat())
+            continue;
+
+        auto since = _deadSince.find(entry.first);
+        if (since == _deadSince.end())
+        {
+            _deadSince.emplace(entry.first, now);
+            continue;
+        }
+
+        if (now - since->second < sPlayerbotAIConfig.LODReviveDelay)
+            continue;
+
+        // Resurrect in place and let the manager refresh gear/health; the bot stays where it
+        // fell and dematerializes normally once the player moves on.
+        bot->ResurrectPlayer(1.0f, false);
+        sRandomPlayerbotMgr.Refresh(bot);
+        _deadSince.erase(entry.first);
+        LOG_DEBUG("playerbots", "Bot LOD: revived dead bot {}", bot->GetName());
     }
 }
 
@@ -376,14 +562,9 @@ void BotLODMgr::OnBotLogin(Player* bot)
     record.hotDeadline = now + sPlayerbotAIConfig.LODDematerializeDelay;
     _pendingSince.erase(guid);
 
-    if (bot->GetMapId() != record.mapId)
-    {
-        LOG_WARN("playerbots", "Bot LOD: bot {} logged in on map {} but record says {}; keeping DB position",
-                 bot->GetName(), bot->GetMapId(), record.mapId);
-        return;
-    }
-
-    Map* map = bot->GetMap();
+    // Records move between maps (ConcentrateRecords relocates them toward players), so the
+    // DB position at login can be anywhere; always settle the bot onto the record position.
+    Map* map = sMapMgr->FindBaseMap(record.mapId);
     if (!map)
         return;
 
@@ -392,7 +573,11 @@ void BotLODMgr::OnBotLogin(Player* bot)
         z = record.z;
 
     record.z = z;
-    if (!bot->TeleportTo(bot->GetMapId(), record.x, record.y, z, record.orientation))
+    if (bot->GetMapId() != record.mapId)
+        LOG_DEBUG("playerbots", "Bot LOD: bot {} materializing from map {} to record map {}",
+                  bot->GetName(), bot->GetMapId(), record.mapId);
+
+    if (!bot->TeleportTo(record.mapId, record.x, record.y, z, record.orientation))
     {
         LOG_WARN("playerbots", "Bot LOD: bot {} could not be moved to its cold position on map {}",
                  bot->GetName(), record.mapId);
