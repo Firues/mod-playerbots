@@ -562,6 +562,18 @@ void BotLODMgr::OnBotLogin(Player* bot)
     record.hotDeadline = now + sPlayerbotAIConfig.LODDematerializeDelay;
     _pendingSince.erase(guid);
 
+    // Factory-created characters are level-1 shells: the standard random-bot login flow
+    // levels them via RandomizeFirst (rolled in [RandomBotMinLevel .. player max level + 3]
+    // when SyncLevelWithPlayers is on) and equips them for the rolled level, but that flow
+    // is bypassed in LOD mode. Run it here for uninitialized bots so materialized crowds
+    // match the population design instead of spawning as level-1 shells. The rolled level
+    // also updates record.level below so cold records stop being re-rolled after this.
+    if (bot->GetLevel() < 3 && sRandomPlayerbotMgr.IsRandomBot(bot))
+    {
+        sRandomPlayerbotMgr.Randomize(bot);
+        record.level = bot->GetLevel();
+    }
+
     // Records move between maps (ConcentrateRecords relocates them toward players), so the
     // DB position at login can be anywhere; always settle the bot onto the record position.
     Map* map = sMapMgr->FindBaseMap(record.mapId);
