@@ -279,6 +279,7 @@ bool PlayerbotAIConfig::Initialize()
     LODColdTickInterval = sConfigMgr->GetOption<uint32>("Playerbots.LOD.ColdTickInterval", 30);
     LODColdWanderRadius = sConfigMgr->GetOption<float>("Playerbots.LOD.ColdWanderRadius", 150.0f);
     LODColdMoveSpeed = sConfigMgr->GetOption<float>("Playerbots.LOD.ColdMoveSpeed", 7.0f);
+    LODMinSpawnDistance = sConfigMgr->GetOption<float>("Playerbots.LOD.MinSpawnDistance", 100.0f);
     LODConcentrateInPlayerZone = sConfigMgr->GetOption<bool>("Playerbots.LOD.ConcentrateInPlayerZone", false);
     LODConcentrateRadius = sConfigMgr->GetOption<uint32>("Playerbots.LOD.ConcentrateRadius", 250);
     LODBotsNearPlayerTarget = sConfigMgr->GetOption<uint32>("Playerbots.LOD.BotsNearPlayerTarget", 30);
@@ -297,6 +298,10 @@ bool PlayerbotAIConfig::Initialize()
     LODMaxLogoutsPerTick = std::max<uint32>(LODMaxLogoutsPerTick, 1);
     LODColdWanderRadius = std::max<float>(LODColdWanderRadius, 1.0f);
     LODColdMoveSpeed = std::max<float>(LODColdMoveSpeed, 0.1f);
+    // Above the client render distance (Visibility.Distance.*) so materializations
+    // happen off-screen; also clamped below ActiveRadius so candidates stay hot.
+    if (LODMinSpawnDistance > LODActiveRadius)
+        LODMinSpawnDistance = LODActiveRadius;
     if (LODConcentrateRadius > LODActiveRadius)
         LODConcentrateRadius = uint32(LODActiveRadius);
     LODReviveDelay = std::max<uint32>(LODReviveDelay, 5);

@@ -132,6 +132,12 @@ Playerbots.LOD.ColdWanderRadius = 150
 # Cold wander speed in yards per second. Cold bots do not use collision or mmaps.
 Playerbots.LOD.ColdMoveSpeed = 7.0
 
+# Minimum distance from a real player at which a cold bot is materialized or placed
+# by the crowd steering. Set above the client render distance (Visibility.Distance.*)
+# so bots come alive off-screen and are only rendered when the player approaches them,
+# exactly like any other mob or object loading.
+Playerbots.LOD.MinSpawnDistance = 100
+
 # Steer the cold population toward real players: when a player's zone holds fewer
 # bots than BotsNearPlayerTarget, relocate cold records (data only) into the player's
 # zone at random points around them. Records in faction-controlled zones are matched

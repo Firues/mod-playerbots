@@ -332,6 +332,7 @@ void BotLODMgr::RefreshHotSet(time_t now)
     }
 
     float const activeSq = sPlayerbotAIConfig.LODActiveRadius * sPlayerbotAIConfig.LODActiveRadius;
+    float const minSpawnSq = sPlayerbotAIConfig.LODMinSpawnDistance * sPlayerbotAIConfig.LODMinSpawnDistance;
     float const deactivateSq =
         sPlayerbotAIConfig.LODDeactivateRadius * sPlayerbotAIConfig.LODDeactivateRadius;
 
@@ -374,6 +375,12 @@ void BotLODMgr::RefreshHotSet(time_t now)
         }
         else if (record.nearestPlayerSq <= activeSq)
         {
+            // Materialize only beyond the client render distance: a bot appearing
+            // a few yards in front of a running player breaks the illusion. Closer
+            // shells stay cold until the player moves away, then go live unseen.
+            if (record.nearestPlayerSq < minSpawnSq)
+                continue;
+
             candidates.push_back({record.nearestPlayerSq, record.guid});
         }
     }
@@ -415,8 +422,10 @@ void BotLODMgr::ConcentrateRecords(time_t /*now*/)
 
     float const activeSq = sPlayerbotAIConfig.LODActiveRadius * sPlayerbotAIConfig.LODActiveRadius;
     // Place inside the materialization radius (with margin) so relocated records qualify as
-    // hot on the next pass. LODConcentrateRadius is clamped to LODActiveRadius at config load.
-    float const spread = std::max(20.0f, sPlayerbotAIConfig.LODConcentrateRadius * 0.9f);
+    // hot on the next pass, but beyond MinSpawnDistance so they never appear right next to
+    // a player. LODConcentrateRadius is clamped to LODActiveRadius at config load.
+    float const spawnFloor = std::max(20.0f, sPlayerbotAIConfig.LODMinSpawnDistance * 1.1f);
+    float const spread = std::max(spawnFloor, sPlayerbotAIConfig.LODConcentrateRadius * 0.9f);
     uint32 budget = sPlayerbotAIConfig.LODMaxLoginsPerTick;
 
     for (RealPlayerPosition const& player : _players)
@@ -494,7 +503,7 @@ void BotLODMgr::ConcentrateRecords(time_t /*now*/)
 
             BotRecord& record = it->second;
             float const angle = frand(0.0f, LOD_TWO_PI);
-            float const distance = frand(20.0f, spread);
+            float const distance = frand(spawnFloor, spread);
             float const x = player.x + std::cos(angle) * distance;
             float const y = player.y + std::sin(angle) * distance;
 
@@ -857,35 +866,6 @@ void BotLODMgr::UpdateCold(uint32 diff)
     {
         BotRecord& record = entry.second;
         if (record.online)
-            continue;
-
-        // Shells must not wander into a real player's immediate vicinity: a bot
-        // materializing 5-10 yards away from the player looks wrong. Flee to a fresh
-        // wander target when a shell has drifted too close to where the player is.
-        bool fled = false;
-        for (RealPlayerPosition const& player : _players)
-        {
-            if (player.mapId != record.mapId)
-                continue;
-
-            float const dx = record.x - player.x;
-            float const dy = record.y - player.y;
-            float const distSq = dx * dx + dy * dy;
-            if (distSq < 30.0f * 30.0f)
-            {
-                float const dist = std::sqrt(distSq);
-                float const awayAngle = dist > 1.0f ? std::atan2(dy, dx) : frand(0.0f, LOD_TWO_PI);
-                float const fleeDistance = frand(60.0f, 150.0f);
-                record.targetX = record.x + std::cos(awayAngle) * fleeDistance;
-                record.targetY = record.y + std::sin(awayAngle) * fleeDistance;
-                record.targetZ = record.z;
-                record.hasTarget = true;
-                fled = true;
-                break;
-            }
-        }
-
-        if (fled)
             continue;
 
         if (!record.hasTarget)
