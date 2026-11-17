@@ -437,6 +437,10 @@ void BotLODMgr::ConcentrateRecords(time_t /*now*/)
     // hot on the next pass, but beyond MinSpawnDistance so they never appear right next to
     // a player. LODConcentrateRadius is clamped to LODActiveRadius at config load.
     float const spawnFloor = std::max(20.0f, sPlayerbotAIConfig.LODMinSpawnDistance * 1.1f);
+    uint32 maxRealLevel = 0;
+    for (RealPlayerPosition const& player : _players)
+        maxRealLevel = std::max(maxRealLevel, player.level);
+    uint32 const levelCeiling = maxRealLevel ? maxRealLevel + 3 : 0;
     float const spread = std::max(spawnFloor, sPlayerbotAIConfig.LODConcentrateRadius * 0.9f);
     uint32 budget = sPlayerbotAIConfig.LODMaxLoginsPerTick;
 
