@@ -256,7 +256,9 @@ void BotLODMgr::LoadWhoNames()
     // Lowercase name -> guid index for offline invitations (the client sends the typed name).
     _whoNameIndex.clear();
     for (auto const& [guid, identity] : _whoData)
-        _whoNameIndex[identity.nameNarrow] = guid;
+        std::string nameLower = identity.nameNarrow;
+        std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
+        _whoNameIndex[nameLower] = guid;
 }
 
 void BotLODMgr::Shutdown()
@@ -786,6 +788,11 @@ bool BotLODMgr::TryInviteColdBot(Player* inviter, std::string const& memberName)
     if (record.online || _pendingSince.contains(idx->second) || _pendingInvites.contains(idx->second))
         return false;
 
+    // Respect DisableDeathKnightLogin: login-disabled DK shells must stay off-screen.
+    if (sPlayerbotAIConfig.DisableDeathKnightLogin && record.race == RACE_UNDEAD_PLAYER &&
+        record.classId == CLASS_DEATH_KNIGHT)
+        return false;
+
     time_t const now = time(nullptr);
     if (!Materialize(record, now))
         return false;
@@ -841,6 +848,11 @@ void BotLODMgr::AppendWhoEntries(std::vector<WhoListPlayerInfo>& storage) const
     {
         BotRecord const& record = entry.second;
         if (record.online)
+            continue;
+
+        // Login-disabled DKs must not tease from the who list either.
+        if (sPlayerbotAIConfig.DisableDeathKnightLogin && record.race == RACE_UNDEAD_PLAYER &&
+            record.classId == CLASS_DEATH_KNIGHT)
             continue;
 
         auto identity = _whoData.find(entry.first);
