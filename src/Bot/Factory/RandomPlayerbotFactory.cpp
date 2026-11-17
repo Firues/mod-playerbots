@@ -513,11 +513,11 @@ uint32 RandomPlayerbotFactory::StartZoneForRace(uint8 race)
         case RACE_ORC: return 14;          // Durotar
         case RACE_DWARF: return 1;         // Dun Morogh
         case RACE_NIGHTELF: return 141;    // Teldrassil
-        case RACE_UNDEAD: return 85;       // Tirisfal Glades
+        case RACE_UNDEAD_PLAYER: return 85;       // Tirisfal Glades
         case RACE_TAUREN: return 215;      // Mulgore
         case RACE_GNOME: return 1;         // Dun Morogh
         case RACE_TROLL: return 14;        // Durotar
-        case RACE_BLOOD_ELF: return 3430;  // Eversong Woods
+        case RACE_BLOODELF: return 3430;  // Eversong Woods
         case RACE_DRAENEI: return 3524;    // Azuremyst Isle
         default: return 0;
     }
