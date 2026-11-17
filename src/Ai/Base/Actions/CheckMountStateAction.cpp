@@ -62,6 +62,13 @@ MountData CollectMountData(Player const* bot)
                         // TODO: Add other scaling mounts here if they have the same issue, or adjust above
                         // checks so that they are all correctly detected.
                         spellInfo->Id == 54729) ? 1 : 0;
+
+        // IndividualProgression: vanilla-era world has no flying, and epic mounts unlock
+        // at 60 (vanilla rules) - filter both out of the bot's mount pool.
+        if (sPlayerbotAIConfig.IndividualProgressionEnabled &&
+            (index == 1 || speed >= 100))
+            continue;
+
         data.allSpells[index][speed].push_back(spellId);
     }
     return data;
@@ -186,8 +193,12 @@ bool CheckMountStateAction::isUseful()
     if (!GET_PLAYERBOT_AI(bot)->HasStrategy("mount", BOT_STATE_NON_COMBAT) && !bot->IsMounted())
         return false;
 
-    // Not useful when level lower than minimum required
-    if (bot->GetLevel() < sPlayerbotAIConfig.UseGroundMountAtMinLevel)
+    // Not useful when level lower than minimum required. With IndividualProgression
+    // enabled, bots follow the same vanilla-era riding rules as the player (mounts at 40).
+    uint32 const minGroundLevel = sPlayerbotAIConfig.IndividualProgressionEnabled
+        ? 40u
+        : uint32(sPlayerbotAIConfig.UseGroundMountAtMinLevel);
+    if (bot->GetLevel() < minGroundLevel)
         return false;
 
     // Allow mounting while transformed only if the form allows it

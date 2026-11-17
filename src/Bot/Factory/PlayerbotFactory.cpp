@@ -3382,13 +3382,18 @@ void PlayerbotFactory::InitSkills()
     bot->UpdateSkillsForLevel();
 
     bot->SetSkill(SKILL_RIDING, 0, 0, 0);
-    if (bot->GetLevel() >= sPlayerbotAIConfig.UseGroundMountAtMinLevel)
+    // IndividualProgression: vanilla-era riding rules - training at 40, epic at 60,
+    // and no flying (flying mounts belong to TBC+ eras the population has not reached).
+    bool const ipRiding = sPlayerbotAIConfig.IndividualProgressionEnabled;
+    uint32 const groundRideLevel = ipRiding ? 40u : uint32(sPlayerbotAIConfig.UseGroundMountAtMinLevel);
+    uint32 const fastRideLevel = ipRiding ? 60u : uint32(sPlayerbotAIConfig.UseFastGroundMountAtMinLevel);
+    if (bot->GetLevel() >= groundRideLevel)
         bot->learnSpell(33388);
-    if (bot->GetLevel() >= sPlayerbotAIConfig.UseFastGroundMountAtMinLevel)
+    if (bot->GetLevel() >= fastRideLevel)
         bot->learnSpell(33391);
-    if (bot->GetLevel() >= sPlayerbotAIConfig.UseFlyMountAtMinLevel)
+    if (!ipRiding && bot->GetLevel() >= sPlayerbotAIConfig.UseFlyMountAtMinLevel)
         bot->learnSpell(34090);
-    if (bot->GetLevel() >= sPlayerbotAIConfig.UseFastFlyMountAtMinLevel)
+    if (!ipRiding && bot->GetLevel() >= sPlayerbotAIConfig.UseFastFlyMountAtMinLevel)
         bot->learnSpell(34091);
 
     uint32 skillLevel = bot->GetLevel() < 40 ? 0 : 1;
@@ -4095,10 +4100,13 @@ void PlayerbotFactory::AutoGear(Player* bot, uint32 itemQuality, uint32 ilvl, bo
 
 void PlayerbotFactory::InitMounts()
 {
-    uint32 firstmount = sPlayerbotAIConfig.UseGroundMountAtMinLevel;
-    uint32 secondmount = sPlayerbotAIConfig.UseFastGroundMountAtMinLevel;
-    uint32 thirdmount = sPlayerbotAIConfig.UseFlyMountAtMinLevel;
-    uint32 fourthmount = sPlayerbotAIConfig.UseFastFlyMountAtMinLevel;
+    // IndividualProgression: vanilla-era rules - ground mounts at 40, epic at 60,
+    // and no flying mounts (the population has not reached flying eras).
+    bool const ipRiding = sPlayerbotAIConfig.IndividualProgressionEnabled;
+    uint32 firstmount = ipRiding ? 40u : uint32(sPlayerbotAIConfig.UseGroundMountAtMinLevel);
+    uint32 secondmount = ipRiding ? 60u : uint32(sPlayerbotAIConfig.UseFastGroundMountAtMinLevel);
+    uint32 thirdmount = ipRiding ? 255u : uint32(sPlayerbotAIConfig.UseFlyMountAtMinLevel);
+    uint32 fourthmount = ipRiding ? 255u : uint32(sPlayerbotAIConfig.UseFastFlyMountAtMinLevel);
 
     if (bot->GetLevel() < firstmount)
         return;

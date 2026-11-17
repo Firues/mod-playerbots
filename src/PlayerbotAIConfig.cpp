@@ -535,6 +535,9 @@ bool PlayerbotAIConfig::Initialize()
     PerfMonEnabled = sConfigMgr->GetOption<bool>("Playerbots.PerfMonEnabled", false);
 
     UseGroundMountAtMinLevel = sConfigMgr->GetOption<int32>("Playerbots.UseGroundMountAtMinLevel", 20);
+    // Mirror the IndividualProgression module's own enable flag so bots follow the same
+    // vanilla-era riding rules the player does when IP is active.
+    IndividualProgressionEnabled = sConfigMgr->GetOption<bool>("IndividualProgression.Enable", false);
     UseFastGroundMountAtMinLevel = sConfigMgr->GetOption<int32>("Playerbots.UseFastGroundMountAtMinLevel", 40);
     UseFlyMountAtMinLevel = sConfigMgr->GetOption<int32>("Playerbots.UseFlyMountAtMinLevel", 60);
     UseFastFlyMountAtMinLevel = sConfigMgr->GetOption<int32>("Playerbots.UseFastFlyMountAtMinLevel", 70);

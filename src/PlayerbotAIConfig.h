@@ -483,6 +483,9 @@ public:
     uint32 UseFastGroundMountAtMinLevel;
     uint32 UseFlyMountAtMinLevel;
     uint32 UseFastFlyMountAtMinLevel;
+    // When the IndividualProgression module is enabled, bots follow the same vanilla-era
+    // riding rules as players (ground at 40, epic at 60, no flying) instead of WotLK ones.
+    bool IndividualProgressionEnabled;
 
     // stagger flightpath takeoff
     uint32 BotTaxiDelayMin;
