@@ -6,6 +6,7 @@
 
 #include "BotLODMgr.h"
 #include "BotRecord.h"
+#include "Cache/WhoListCacheMgr.h"
 #include "Chat.h"
 #include "DatabaseEnv.h"
 #include "DBCStores.h"
@@ -21,6 +22,7 @@
 #include "Random.h"
 #include "RandomPlayerbotMgr.h"
 #include "StringFormat.h"
+#include "Util.h"
 #include "Timer.h"
 #include "WorldSession.h"
 
@@ -92,6 +94,8 @@ void BotLODMgr::Initialize()
         _enabled = false;
         return;
     }
+
+    LoadWhoNames();
 
     LOG_INFO("playerbots", "Bot LOD: loaded {} records (population {}, max active {})",
              _records.size(), sPlayerbotAIConfig.LODPopulation, sPlayerbotAIConfig.LODMaxActiveBots);
@@ -169,6 +173,86 @@ void BotLODMgr::LoadRecords()
     }
 }
 
+// Names, genders and guild names of the whole bot population, used to render cold
+// records in the who list (the who cache has no Player object to pull them from).
+void BotLODMgr::LoadWhoNames()
+{
+    _whoData.clear();
+
+    auto const& accounts = sPlayerbotAIConfig.RandomBotAccounts;
+    for (size_t offset = 0; offset < accounts.size(); offset += LOD_ACCOUNT_QUERY_CHUNK)
+    {
+        std::string accountList;
+        size_t const end = std::min(accounts.size(), offset + LOD_ACCOUNT_QUERY_CHUNK);
+        for (size_t i = offset; i < end; ++i)
+        {
+            if (!accountList.empty())
+                accountList += ',';
+
+            accountList += std::to_string(accounts[i]);
+        }
+
+        QueryResult result = CharacterDatabase.Query(Acore::StringFormat(
+            "SELECT c.guid, c.name, c.gender FROM characters c WHERE c.deleteDate IS NULL AND c.account IN ({})",
+            accountList));
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                ObjectGuid::LowType const guid = fields[0].Get<uint32>();
+                std::string const name = fields[1].Get<std::string>();
+                uint8 const gender = fields[2].Get<uint8>();
+
+                WhoBotIdentity& data = _whoData[guid];
+                std::wstring wide;
+                if (Utf8toWStr(name, wide))
+                {
+                    data.name = wide;
+                    wstrToLower(data.name);
+                }
+                data.nameNarrow = name;
+                data.gender = gender;
+            } while (result->NextRow());
+        }
+        else
+        {
+            LOG_ERROR("playerbots", "Bot LOD: failed to load bot character names (chunk {}-{})", offset, end);
+            return;
+        }
+
+        QueryResult guilds = CharacterDatabase.Query(Acore::StringFormat(
+            "SELECT c.guid, g.name FROM characters c "
+            "JOIN guild_member gm ON gm.guid = c.guid "
+            "JOIN guild g ON g.guildid = gm.guildid "
+            "WHERE c.deleteDate IS NULL AND c.account IN ({})",
+            accountList));
+        if (guilds)
+        {
+            do
+            {
+                Field* fields = guilds->Fetch();
+                ObjectGuid::LowType const guid = fields[0].Get<uint32>();
+                std::string const guildName = fields[1].Get<std::string>();
+
+                auto it = _whoData.find(guid);
+                if (it == _whoData.end())
+                    continue;
+
+                std::wstring wide;
+                if (Utf8toWStr(guildName, wide))
+                {
+                    it->second.guild = wide;
+                    wstrToLower(it->second.guild);
+                    it->second.guildNarrow = guildName;
+                }
+            } while (guilds->NextRow());
+        }
+    }
+
+    LOG_INFO("playerbots", "Bot LOD: loaded who-list identities for {} bots", _whoData.size());
+}
+
 void BotLODMgr::Shutdown()
 {
     if (_enabled)
@@ -178,6 +262,7 @@ void BotLODMgr::Shutdown()
     _pendingSince.clear();
     _deadSince.clear();
     _players.clear();
+    _whoData.clear();
     _enabled = false;
 }
 
@@ -636,6 +721,48 @@ void BotLODMgr::OnBotLogout(Player* bot)
         record.y = bot->GetPositionY();
         record.z = bot->GetPositionZ();
         record.orientation = bot->GetOrientation();
+    }
+}
+
+// Who list extension: render cold records as who entries so the in-game who window
+// reflects the whole population, mirroring how a full realm's /who returns a sample of
+// all online players. Levels: a materialized-once record shows its real level; a never
+// materialized shell shows a stable per-guid roll inside the live player ceiling.
+void BotLODMgr::AppendWhoEntries(std::vector<WhoListPlayerInfo>& storage) const
+{
+    if (!_enabled)
+        return;
+
+    uint32 ceiling = sPlayerbotAIConfig.RandomBotMaxLevel;
+    for (RealPlayerPosition const& player : _players)
+        ceiling = std::max(ceiling, player.level + 3);
+
+    uint32 const minLevel = std::max(2u, sPlayerbotAIConfig.RandomBotMinLevel);
+
+    for (auto const& entry : _records)
+    {
+        BotRecord const& record = entry.second;
+        if (record.online)
+            continue;
+
+        auto identity = _whoData.find(entry.first);
+        if (identity == _whoData.end() || identity->second.name.empty())
+            continue;
+
+        // Stable per-guid roll so a given bot keeps the same who-list level between
+        // cache rebuilds; capped by the live player ceiling like RandomizeFirst.
+        uint32 hash = (entry.first * 2654435761u) >> 13;
+        uint32 level;
+        if (hash % 100 < 10)
+            level = ceiling;
+        else
+            level = minLevel + (hash % std::max(1u, ceiling - minLevel + 1));
+        level = std::min(level, ceiling);
+
+        storage.emplace_back(ObjectGuid::Create<HighGuid::Player>(entry.first),
+                             Player::TeamIdForRace(record.race), SEC_PLAYER, level, record.classId, record.race,
+                             record.zoneId, identity->second.gender, true, identity->second.name,
+                             identity->second.guild, identity->second.nameNarrow, identity->second.guildNarrow);
     }
 }
 

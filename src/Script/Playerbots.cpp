@@ -480,8 +480,16 @@ class PlayerbotsGlobalScript : public GlobalScript
 {
 public:
     PlayerbotsGlobalScript() : GlobalScript("PlayerbotsGlobalScript", {
-        GLOBALHOOK_CAN_CREATE_LFG_PROPOSAL
+        GLOBALHOOK_CAN_CREATE_LFG_PROPOSAL,
+        GLOBALHOOK_ON_WHO_LIST_CACHE_BUILD
     }) {}
+
+    // LOD cold population joins the who list: the in-game who window reflects the whole
+    // population (mirroring a full realm's /who sample), not only live bots near players.
+    void OnWhoListCacheBuild(std::vector<WhoListPlayerInfo>& storage) override
+    {
+        sBotLODMgr.AppendWhoEntries(storage);
+    }
 
     // Never form a dungeon group made only of bots
     bool CanCreateLfgProposal(lfg::Lfg5Guids const& guids) override

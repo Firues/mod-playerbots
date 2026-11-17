@@ -10,11 +10,13 @@
 #include "BotRecord.h"
 
 #include <ctime>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
 class ChatHandler;
 class Player;
+class WhoListPlayerInfo;
 
 class BotLODMgr
 {
@@ -32,6 +34,10 @@ public:
     [[nodiscard]] uint32 GetPopulation() const { return static_cast<uint32>(_records.size()); }
     void PrintStats(ChatHandler* handler) const;
 
+    // Who list extension: appends one entry per cold (non-materialized) record so the
+    // in-game who window reflects the full population, not only live bots near players.
+    void AppendWhoEntries(std::vector<WhoListPlayerInfo>& storage) const;
+
 private:
     BotLODMgr() = default;
     ~BotLODMgr() = default;
@@ -41,7 +47,17 @@ private:
     BotLODMgr(BotLODMgr&&) = delete;
     BotLODMgr& operator=(BotLODMgr&&) = delete;
 
+    struct WhoBotIdentity
+    {
+        std::wstring name;
+        std::wstring guild;
+        std::string nameNarrow;
+        std::string guildNarrow;
+        uint8 gender = 0;
+    };
+
     void LoadRecords();
+    void LoadWhoNames();
     void RefreshHotSet(time_t now);
     void ConcentrateRecords(time_t now);
     void ReviveDead(time_t now);
@@ -66,6 +82,7 @@ private:
     std::unordered_map<ObjectGuid::LowType, BotRecord> _records;
     std::unordered_map<ObjectGuid::LowType, time_t> _pendingSince;
     std::unordered_map<ObjectGuid::LowType, time_t> _deadSince;
+    std::unordered_map<ObjectGuid::LowType, WhoBotIdentity> _whoData;
     std::vector<RealPlayerPosition> _players;
     bool _enabled = false;
     uint32 _lastUpdateMs = 0;
