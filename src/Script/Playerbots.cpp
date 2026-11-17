@@ -481,7 +481,8 @@ class PlayerbotsGlobalScript : public GlobalScript
 public:
     PlayerbotsGlobalScript() : GlobalScript("PlayerbotsGlobalScript", {
         GLOBALHOOK_CAN_CREATE_LFG_PROPOSAL,
-        GLOBALHOOK_ON_WHO_LIST_CACHE_BUILD
+        GLOBALHOOK_ON_WHO_LIST_CACHE_BUILD,
+        GLOBALHOOK_ON_PLAYER_GROUP_INVITE_OFFLINE
     }) {}
 
     // LOD cold population joins the who list: the in-game who window reflects the whole
@@ -489,6 +490,13 @@ public:
     void OnWhoListCacheBuild(std::vector<WhoListPlayerInfo>& storage) override
     {
         sBotLODMgr.AppendWhoEntries(storage);
+    }
+
+    // A group invite aimed at a cold record: materialize that bot and deliver the
+    // invitation once it has logged in (handled by BotLODMgr).
+    bool OnPlayerGroupInviteOffline(Player* inviter, std::string const& memberName) override
+    {
+        return sBotLODMgr.TryInviteColdBot(inviter, memberName);
     }
 
     // Never form a dungeon group made only of bots

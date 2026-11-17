@@ -38,6 +38,10 @@ public:
     // in-game who window reflects the full population, not only live bots near players.
     void AppendWhoEntries(std::vector<WhoListPlayerInfo>& storage) const;
 
+    // Group invitation targeting a cold record: materialize the named bot and deliver the
+    // invitation after it logs in. Returns false when the name is not a cold record.
+    bool TryInviteColdBot(Player* inviter, std::string const& memberName);
+
 private:
     BotLODMgr() = default;
     ~BotLODMgr() = default;
@@ -56,8 +60,16 @@ private:
         uint8 gender = 0;
     };
 
+    struct PendingInvite
+    {
+        ObjectGuid inviterGuid;
+        time_t readyAt = 0;
+    };
+
     void LoadRecords();
     void LoadWhoNames();
+    void ProcessPendingInvites(time_t now);
+    [[nodiscard]] uint32 StableLevelForRecord(BotRecord const& record, uint32 ceiling) const;
     void RefreshHotSet(time_t now);
     void ConcentrateRecords(time_t now);
     void ReviveDead(time_t now);
@@ -83,6 +95,8 @@ private:
     std::unordered_map<ObjectGuid::LowType, time_t> _pendingSince;
     std::unordered_map<ObjectGuid::LowType, time_t> _deadSince;
     std::unordered_map<ObjectGuid::LowType, WhoBotIdentity> _whoData;
+    std::unordered_map<std::string, ObjectGuid::LowType> _whoNameIndex;
+    std::unordered_map<ObjectGuid::LowType, PendingInvite> _pendingInvites;
     std::vector<RealPlayerPosition> _players;
     bool _enabled = false;
     uint32 _lastUpdateMs = 0;

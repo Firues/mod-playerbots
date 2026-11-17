@@ -57,6 +57,7 @@ public:
     static std::string const CreateRandomGuildName();
     static uint32 CalculateTotalAccountCount();
     static uint32 CalculateAvailableCharsPerAccount();
+    static uint32 StartZoneForRace(uint8 race);
     static void LoadLocalizedNameColumns();
     static std::string GetGuildNameSelector(std::string const& column);
     static std::string GetArenaTeamNameSelector(std::string const& column);

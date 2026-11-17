@@ -503,6 +503,26 @@ uint32 RandomPlayerbotFactory::CalculateAvailableCharsPerAccount()
     return availableChars;
 }
 
+// Who list / map UI display data for a bot character: factory shells never enter the
+// world, so SaveToDB cannot derive their zone - the race starting zone is exact.
+uint32 RandomPlayerbotFactory::StartZoneForRace(uint8 race)
+{
+    switch (race)
+    {
+        case RACE_HUMAN: return 12;        // Elwynn Forest
+        case RACE_ORC: return 14;          // Durotar
+        case RACE_DWARF: return 1;         // Dun Morogh
+        case RACE_NIGHTELF: return 141;    // Teldrassil
+        case RACE_UNDEAD: return 85;       // Tirisfal Glades
+        case RACE_TAUREN: return 215;      // Mulgore
+        case RACE_GNOME: return 1;         // Dun Morogh
+        case RACE_TROLL: return 14;        // Durotar
+        case RACE_BLOOD_ELF: return 3430;  // Eversong Woods
+        case RACE_DRAENEI: return 3524;    // Azuremyst Isle
+        default: return 0;
+    }
+}
+
 void RandomPlayerbotFactory::CreateRandomBots()
 {
     /* multi-thread here is meaningless? since the async db operations */
@@ -783,6 +803,12 @@ void RandomPlayerbotFactory::CreateRandomBots()
             }
 
             playerBot->SaveToDB(true, false);
+            // The who list shows each bot's zone; shells never enter the world so
+            // SaveToDB leaves zone at its default - set the race starting zone.
+            if (uint32 const startZone = StartZoneForRace(playerBot->getRace()))
+                CharacterDatabase.Execute(Acore::StringFormat(
+                    "UPDATE characters SET zone = {} WHERE guid = {}", startZone,
+                    playerBot->GetGUID().GetCounter()));
             sCharacterCache->AddCharacterCacheEntry(playerBot->GetGUID(), accountId, playerBot->GetName(),
                                                     playerBot->getGender(), playerBot->getRace(),
                                                     playerBot->getClass(), playerBot->GetLevel());

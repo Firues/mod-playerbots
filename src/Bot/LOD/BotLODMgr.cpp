@@ -17,6 +17,7 @@
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "PlayerbotFactory.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotAI.h"
 #include "Random.h"
@@ -251,6 +252,11 @@ void BotLODMgr::LoadWhoNames()
     }
 
     LOG_INFO("playerbots", "Bot LOD: loaded who-list identities for {} bots", _whoData.size());
+
+    // Lowercase name -> guid index for offline invitations (the client sends the typed name).
+    _whoNameIndex.clear();
+    for (auto const& [guid, identity] : _whoData)
+        _whoNameIndex[identity.nameNarrow] = guid;
 }
 
 void BotLODMgr::Shutdown()
@@ -263,6 +269,8 @@ void BotLODMgr::Shutdown()
     _deadSince.clear();
     _players.clear();
     _whoData.clear();
+    _whoNameIndex.clear();
+    _pendingInvites.clear();
     _enabled = false;
 }
 
@@ -290,6 +298,7 @@ void BotLODMgr::Update(uint32 /*diff*/)
     ReviveDead(now);
     RefreshHotSet(now);
     ConcentrateRecords(now);
+    ProcessPendingInvites(now);
 }
 
 void BotLODMgr::RefreshHotSet(time_t now)
@@ -649,24 +658,26 @@ void BotLODMgr::OnBotLogin(Player* bot)
     _pendingSince.erase(guid);
 
     // Factory-created characters are level-1 shells: the standard random-bot login flow
-    // levels them via RandomizeFirst (rolled in [RandomBotMinLevel .. player max level + 3]
+    // levels them via factory init (rolled in [RandomBotMinLevel .. player max level + 3]
     // when SyncLevelWithPlayers is on) and equips them for the rolled level, but that flow
     // is bypassed in LOD mode. Run it here for uninitialized bots so materialized crowds
-    // match the population design instead of spawning as level-1 shells. The rolled level
+    // match the population design instead of spawning as level-1 shells. The stable level
     // also updates record.level below so cold records stop being re-rolled after this.
     if (bot->GetLevel() < 3 && sRandomPlayerbotMgr.IsRandomBot(bot))
     {
         // Feed the live player ceiling before rolling: CheckPlayers' 60s sync loop is
-        // bypassed in LOD mode, so RandomizeFirst would otherwise roll against a stale
-        // playersLevel of 0 and every shell would materialize at level 1. Same margin
-        // (+3) as CheckPlayers uses.
+        // bypassed in LOD mode, so the roll would otherwise cap at a stale playersLevel
+        // of 0 and every shell would materialize at level 1. Same margin (+3) as
+        // CheckPlayers uses.
         uint32 maxRealLevel = 0;
         for (RealPlayerPosition const& player : _players)
             maxRealLevel = std::max(maxRealLevel, player.level);
-        if (maxRealLevel)
-            sRandomPlayerbotMgr.SetPlayersLevel(maxRealLevel + 3);
+        uint32 const ceiling = maxRealLevel ? maxRealLevel + 3 : sPlayerbotAIConfig.RandomBotMaxLevel;
+        sRandomPlayerbotMgr.SetPlayersLevel(ceiling);
 
-        sRandomPlayerbotMgr.Randomize(bot);
+        uint32 const targetLevel = StableLevelForRecord(record, ceiling);
+        PlayerbotFactory factory(bot, targetLevel);
+        factory.Randomize(false);
         record.level = bot->GetLevel();
     }
 
@@ -724,6 +735,66 @@ void BotLODMgr::OnBotLogout(Player* bot)
     }
 }
 
+// Group invitation targeting a cold record (e.g. from the who list): materialize the
+// named shell and defer the invitation until it logs in and settles.
+bool BotLODMgr::TryInviteColdBot(Player* inviter, std::string const& memberName)
+{
+    if (!_enabled || !inviter)
+        return false;
+
+    std::string name = memberName;
+    std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+
+    auto idx = _whoNameIndex.find(name);
+    if (idx == _whoNameIndex.end())
+        return false;
+
+    auto recordIt = _records.find(idx->second);
+    if (recordIt == _records.end())
+        return false;
+
+    BotRecord& record = recordIt->second;
+    if (record.online || _pendingSince.contains(idx->second) || _pendingInvites.contains(idx->second))
+        return false;
+
+    time_t const now = time(nullptr);
+    if (!Materialize(record, now))
+        return false;
+
+    _pendingInvites[idx->second] = {inviter->GetGUID(), now + 5};
+    LOG_INFO("playerbots", "Bot LOD: materializing bot {} for a group invitation", record.guid);
+    return true;
+}
+
+// Deliver deferred invitations once the invited bot is logged in and settled.
+void BotLODMgr::ProcessPendingInvites(time_t now)
+{
+    for (auto it = _pendingInvites.begin(); it != _pendingInvites.end();)
+    {
+        if (now < it->second.readyAt)
+        {
+            ++it;
+            continue;
+        }
+
+        Player* inviter = ObjectAccessor::FindConnectedPlayer(it->second.inviterGuid);
+        Player* bot = sRandomPlayerbotMgr.GetPlayerBot(ObjectGuid::Create<HighGuid::Player>(it->first));
+
+        if (!inviter || !bot || !bot->IsInWorld() || bot->IsBeingTeleported())
+        {
+            // The inviter left - nobody to deliver to; a teleporting bot just needs time.
+            it = _pendingInvites.erase(it);
+            continue;
+        }
+
+        WorldPacket packet(CMSG_GROUP_INVITE, bot->GetName().size() + 10);
+        packet << bot->GetName();
+        inviter->GetSession()->HandleGroupInviteOpcode(packet);
+        LOG_INFO("playerbots", "Bot LOD: delivering deferred group invitation to {}", bot->GetName());
+        it = _pendingInvites.erase(it);
+    }
+}
+
 // Who list extension: render cold records as who entries so the in-game who window
 // reflects the whole population, mirroring how a full realm's /who returns a sample of
 // all online players. Levels: a materialized-once record shows its real level; a never
@@ -737,8 +808,6 @@ void BotLODMgr::AppendWhoEntries(std::vector<WhoListPlayerInfo>& storage) const
     for (RealPlayerPosition const& player : _players)
         ceiling = std::max(ceiling, player.level + 3);
 
-    uint32 const minLevel = std::max(2u, sPlayerbotAIConfig.RandomBotMinLevel);
-
     for (auto const& entry : _records)
     {
         BotRecord const& record = entry.second;
@@ -749,21 +818,33 @@ void BotLODMgr::AppendWhoEntries(std::vector<WhoListPlayerInfo>& storage) const
         if (identity == _whoData.end() || identity->second.name.empty())
             continue;
 
-        // Stable per-guid roll so a given bot keeps the same who-list level between
-        // cache rebuilds; capped by the live player ceiling like RandomizeFirst.
-        uint32 hash = (entry.first * 2654435761u) >> 13;
-        uint32 level;
-        if (hash % 100 < 10)
-            level = ceiling;
-        else
-            level = minLevel + (hash % std::max(1u, ceiling - minLevel + 1));
-        level = std::min(level, ceiling);
+        // Unknown location (factory shell that never materialized) - hide from the who
+        // list until it gains a real zone at its first materialization.
+        if (!record.zoneId)
+            continue;
+
+        uint32 const level = StableLevelForRecord(record, ceiling);
 
         storage.emplace_back(ObjectGuid::Create<HighGuid::Player>(entry.first),
                              Player::TeamIdForRace(record.race), SEC_PLAYER, level, record.classId, record.race,
                              record.zoneId, identity->second.gender, true, identity->second.name,
                              identity->second.guild, identity->second.nameNarrow, identity->second.guildNarrow);
     }
+}
+
+uint32 BotLODMgr::StableLevelForRecord(BotRecord const& record, uint32 ceiling) const
+{
+    if (record.level > 1)
+        return record.level;
+
+    uint32 const minLevel = std::max(2u, sPlayerbotAIConfig.RandomBotMinLevel);
+    uint32 hash = (record.guid * 2654435761u) >> 13;
+    uint32 level;
+    if (hash % 100 < 10)
+        level = ceiling;
+    else
+        level = minLevel + (hash % std::max(1u, ceiling - minLevel + 1));
+    return std::min(level, ceiling);
 }
 
 void BotLODMgr::UpdateCold(uint32 diff)
@@ -776,6 +857,35 @@ void BotLODMgr::UpdateCold(uint32 diff)
     {
         BotRecord& record = entry.second;
         if (record.online)
+            continue;
+
+        // Shells must not wander into a real player's immediate vicinity: a bot
+        // materializing 5-10 yards away from the player looks wrong. Flee to a fresh
+        // wander target when a shell has drifted too close to where the player is.
+        bool fled = false;
+        for (RealPlayerPosition const& player : _players)
+        {
+            if (player.mapId != record.mapId)
+                continue;
+
+            float const dx = record.x - player.x;
+            float const dy = record.y - player.y;
+            float const distSq = dx * dx + dy * dy;
+            if (distSq < 30.0f * 30.0f)
+            {
+                float const dist = std::sqrt(distSq);
+                float const awayAngle = dist > 1.0f ? std::atan2(dy, dx) : frand(0.0f, LOD_TWO_PI);
+                float const fleeDistance = frand(60.0f, 150.0f);
+                record.targetX = record.x + std::cos(awayAngle) * fleeDistance;
+                record.targetY = record.y + std::sin(awayAngle) * fleeDistance;
+                record.targetZ = record.z;
+                record.hasTarget = true;
+                fled = true;
+                break;
+            }
+        }
+
+        if (fled)
             continue;
 
         if (!record.hasTarget)
