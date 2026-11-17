@@ -69,7 +69,7 @@ private:
     void LoadRecords();
     void LoadWhoNames();
     void ProcessPendingInvites(time_t now);
-    [[nodiscard]] uint32 StableLevelForRecord(BotRecord const& record, uint32 ceiling) const;
+    [[nodiscard]] uint32 StableLevelForRecord(BotRecord const& record, uint32 maxRealLevel) const;
     void RefreshHotSet(time_t now);
     void ConcentrateRecords(time_t now);
     void ReviveDead(time_t now);

@@ -331,6 +331,14 @@ void BotLODMgr::RefreshHotSet(time_t now)
                             player->GetLevel()});
     }
 
+    // Live player ceiling for the LOD population: SyncLevelWithPlayers semantics - bots
+    // above the real players' max level (+3, same margin as CheckPlayers) do not spawn.
+    uint32 maxRealLevel = 0;
+    for (RealPlayerPosition const& player : _players)
+        maxRealLevel = std::max(maxRealLevel, player.level);
+    uint32 const levelCeiling = maxRealLevel ? maxRealLevel + 3 : 0;
+    sRandomPlayerbotMgr.SetPlayersLevel(levelCeiling);
+
     float const activeSq = sPlayerbotAIConfig.LODActiveRadius * sPlayerbotAIConfig.LODActiveRadius;
     float const minSpawnSq = sPlayerbotAIConfig.LODMinSpawnDistance * sPlayerbotAIConfig.LODMinSpawnDistance;
     float const deactivateSq =
@@ -379,6 +387,10 @@ void BotLODMgr::RefreshHotSet(time_t now)
             // a few yards in front of a running player breaks the illusion. Closer
             // shells stay cold until the player moves away, then go live unseen.
             if (record.nearestPlayerSq < minSpawnSq)
+                continue;
+
+            // SyncLevelWithPlayers: bots above the live player ceiling stay cold.
+            if (levelCeiling && record.level > levelCeiling)
                 continue;
 
             candidates.push_back({record.nearestPlayerSq, record.guid});
@@ -486,6 +498,10 @@ void BotLODMgr::ConcentrateRecords(time_t /*now*/)
 
             // Respect faction-controlled zones, matching the teleport checks in RandomTeleport.
             if (zone && !RaceAllowedInZone(record.race, zone->team))
+                continue;
+
+            // SyncLevelWithPlayers: bots above the live player ceiling stay cold.
+            if (levelCeiling && record.level > levelCeiling)
                 continue;
 
             eligible.push_back(record.guid);
@@ -684,7 +700,7 @@ void BotLODMgr::OnBotLogin(Player* bot)
         uint32 const ceiling = maxRealLevel ? maxRealLevel + 3 : sPlayerbotAIConfig.RandomBotMaxLevel;
         sRandomPlayerbotMgr.SetPlayersLevel(ceiling);
 
-        uint32 const targetLevel = StableLevelForRecord(record, ceiling);
+        uint32 const targetLevel = StableLevelForRecord(record, maxRealLevel);
         PlayerbotFactory factory(bot, targetLevel);
         factory.Randomize(false);
         record.level = bot->GetLevel();
@@ -813,9 +829,9 @@ void BotLODMgr::AppendWhoEntries(std::vector<WhoListPlayerInfo>& storage) const
     if (!_enabled)
         return;
 
-    uint32 ceiling = sPlayerbotAIConfig.RandomBotMaxLevel;
+    uint32 maxRealLevel = 0;
     for (RealPlayerPosition const& player : _players)
-        ceiling = std::max(ceiling, player.level + 3);
+        maxRealLevel = std::max(maxRealLevel, player.level);
 
     for (auto const& entry : _records)
     {
@@ -832,7 +848,7 @@ void BotLODMgr::AppendWhoEntries(std::vector<WhoListPlayerInfo>& storage) const
         if (!record.zoneId)
             continue;
 
-        uint32 const level = StableLevelForRecord(record, ceiling);
+        uint32 const level = StableLevelForRecord(record, maxRealLevel);
 
         storage.emplace_back(ObjectGuid::Create<HighGuid::Player>(entry.first),
                              Player::TeamIdForRace(record.race), SEC_PLAYER, level, record.classId, record.race,
@@ -841,18 +857,22 @@ void BotLODMgr::AppendWhoEntries(std::vector<WhoListPlayerInfo>& storage) const
     }
 }
 
-uint32 BotLODMgr::StableLevelForRecord(BotRecord const& record, uint32 ceiling) const
+// Stable per-guid level for a cold record, inside the band around the live player
+// level (floor = maxReal - 10, ceiling = maxReal + 3 - mirrors SyncLevelWithPlayers).
+// Never-materialized shells roll here once; materialized records keep their real level.
+uint32 BotLODMgr::StableLevelForRecord(BotRecord const& record, uint32 maxRealLevel) const
 {
     if (record.level > 1)
         return record.level;
 
-    uint32 const minLevel = std::max(2u, sPlayerbotAIConfig.RandomBotMinLevel);
+    uint32 const ceiling = maxRealLevel ? maxRealLevel + 3 : sPlayerbotAIConfig.RandomBotMaxLevel;
+    uint32 const floor = std::max(2u, maxRealLevel > 12 ? maxRealLevel - 10 : 2u);
     uint32 hash = (record.guid * 2654435761u) >> 13;
     uint32 level;
     if (hash % 100 < 10)
         level = ceiling;
     else
-        level = minLevel + (hash % std::max(1u, ceiling - minLevel + 1));
+        level = floor + (hash % std::max(1u, ceiling - floor + 1));
     return std::min(level, ceiling);
 }
 
