@@ -164,6 +164,10 @@ public:
     void SetTradeDiscount(Player* bot, Player* master, uint32 value);
     uint32 GetTradeDiscount(Player* bot, Player* master);
     void Refresh(Player* bot);
+    // LOD materialization feeds the live player ceiling here: CheckPlayers' 60s loop is
+    // bypassed in LOD mode, so RandomizeFirst would otherwise roll levels against a
+    // stale/empty playersLevel (all shells would materialize at level 1).
+    void SetPlayersLevel(uint32 level) { playersLevel = level; }
     void RandomTeleportForLevel(Player* bot);
     void RandomTeleportGrindForLevel(Player* bot);
     void RandomTeleportForRpg(Player* bot);

@@ -60,6 +60,7 @@ private:
         float y = 0.0f;
         float z = 0.0f;
         uint32 zoneId = 0;
+        uint32 level = 0;
     };
 
     std::unordered_map<ObjectGuid::LowType, BotRecord> _records;

@@ -233,7 +233,8 @@ void BotLODMgr::RefreshHotSet(time_t now)
 
         _players.push_back({map->GetId(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(),
                             map->GetZoneId(PHASEMASK_NORMAL, player->GetPositionX(), player->GetPositionY(),
-                                           player->GetPositionZ())});
+                                           player->GetPositionZ()),
+                            player->GetLevel()});
     }
 
     float const activeSq = sPlayerbotAIConfig.LODActiveRadius * sPlayerbotAIConfig.LODActiveRadius;
@@ -570,6 +571,16 @@ void BotLODMgr::OnBotLogin(Player* bot)
     // also updates record.level below so cold records stop being re-rolled after this.
     if (bot->GetLevel() < 3 && sRandomPlayerbotMgr.IsRandomBot(bot))
     {
+        // Feed the live player ceiling before rolling: CheckPlayers' 60s sync loop is
+        // bypassed in LOD mode, so RandomizeFirst would otherwise roll against a stale
+        // playersLevel of 0 and every shell would materialize at level 1. Same margin
+        // (+3) as CheckPlayers uses.
+        uint32 maxRealLevel = 0;
+        for (RealPlayerPosition const& player : _players)
+            maxRealLevel = std::max(maxRealLevel, player.level);
+        if (maxRealLevel)
+            sRandomPlayerbotMgr.SetPlayersLevel(maxRealLevel + 3);
+
         sRandomPlayerbotMgr.Randomize(bot);
         record.level = bot->GetLevel();
     }
