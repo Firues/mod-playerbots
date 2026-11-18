@@ -40,6 +40,8 @@ namespace
 {
 constexpr uint32 LOD_ACCOUNT_QUERY_CHUNK = 500;
 constexpr uint32 LOD_PENDING_TIMEOUT = 30;
+// Seconds to keep retrying a deferred invitation while the materialized bot logs in.
+constexpr time_t LOD_INVITE_DELIVERY_TIMEOUT = 60;
 constexpr float LOD_TWO_PI = 6.2831853f;
 
 // AreaTableEntry::team: 2 = Alliance-controlled, 4 = Horde-controlled, anything else is shared.
@@ -836,17 +838,26 @@ void BotLODMgr::ProcessPendingInvites(time_t now)
         }
 
         Player* inviter = ObjectAccessor::FindConnectedPlayer(it->second.inviterGuid);
-        Player* bot = sRandomPlayerbotMgr.GetPlayerBot(ObjectGuid::Create<HighGuid::Player>(it->first));
 
-        if (!inviter || !bot || !bot->IsInWorld() || bot->IsBeingTeleported())
+        if (!inviter || now >= it->second.readyAt + LOD_INVITE_DELIVERY_TIMEOUT)
         {
-            // The inviter left - nobody to deliver to; a teleporting bot just needs time.
+            // The inviter left - nobody to deliver to; or the bot failed to log in within
+            // the delivery window, so stop retrying.
             it = _pendingInvites.erase(it);
+            continue;
+        }
+
+        Player* bot = sRandomPlayerbotMgr.GetPlayerBot(ObjectGuid::Create<HighGuid::Player>(it->first));
+        if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported())
+        {
+            // The materialized bot is still logging in - retry on the next tick.
+            ++it;
             continue;
         }
 
         WorldPacket packet(CMSG_GROUP_INVITE, bot->GetName().size() + 10);
         packet << bot->GetName();
+        packet << uint32(0);  // trailing field the opcode handler skips; without it the read overruns
         inviter->GetSession()->HandleGroupInviteOpcode(packet);
         LOG_INFO("playerbots", "Bot LOD: delivering deferred group invitation to {}", bot->GetName());
         it = _pendingInvites.erase(it);
