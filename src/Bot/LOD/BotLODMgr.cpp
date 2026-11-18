@@ -773,34 +773,54 @@ void BotLODMgr::OnBotLogout(Player* bot)
 bool BotLODMgr::TryInviteColdBot(Player* inviter, std::string const& memberName)
 {
     if (!_enabled || !inviter)
+    {
+        LOG_INFO("playerbots", "Bot LOD invite: {} skipped (LOD disabled or no inviter)", memberName);
         return false;
+    }
 
     std::string name = memberName;
     std::transform(name.begin(), name.end(), name.begin(), ::tolower);
 
     auto idx = _whoNameIndex.find(name);
     if (idx == _whoNameIndex.end())
+    {
+        LOG_INFO("playerbots", "Bot LOD invite: {} not in the name index ({} names)", memberName, _whoNameIndex.size());
         return false;
+    }
 
     auto recordIt = _records.find(idx->second);
     if (recordIt == _records.end())
+    {
+        LOG_INFO("playerbots", "Bot LOD invite: {} record {} not found", memberName, idx->second);
         return false;
+    }
 
     BotRecord& record = recordIt->second;
     if (record.online || _pendingSince.contains(idx->second) || _pendingInvites.contains(idx->second))
+    {
+        LOG_INFO("playerbots", "Bot LOD invite: {} skipped (online={} pendingSince={} pendingInvite={})",
+                 memberName, record.online, _pendingSince.contains(idx->second), _pendingInvites.contains(idx->second));
         return false;
+    }
 
     // Respect DisableDeathKnightLogin: login-disabled DK shells must stay off-screen.
     if (sPlayerbotAIConfig.DisableDeathKnightLogin && record.race == RACE_UNDEAD_PLAYER &&
         record.classId == CLASS_DEATH_KNIGHT)
+    {
+        LOG_INFO("playerbots", "Bot LOD invite: {} skipped (DK login disabled)", memberName);
         return false;
+    }
 
     time_t const now = time(nullptr);
     if (!Materialize(record, now))
+    {
+        LOG_INFO("playerbots", "Bot LOD invite: {} materialization failed", memberName);
         return false;
+    }
 
     _pendingInvites[idx->second] = {inviter->GetGUID(), now + 5};
-    LOG_INFO("playerbots", "Bot LOD: materializing bot {} for a group invitation", record.guid);
+    LOG_INFO("playerbots", "Bot LOD invite: {} materializing for a group invitation from {}",
+             memberName, inviter->GetName());
     return true;
 }
 
