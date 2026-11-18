@@ -256,9 +256,11 @@ void BotLODMgr::LoadWhoNames()
     // Lowercase name -> guid index for offline invitations (the client sends the typed name).
     _whoNameIndex.clear();
     for (auto const& [guid, identity] : _whoData)
+    {
         std::string nameLower = identity.nameNarrow;
         std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
         _whoNameIndex[nameLower] = guid;
+    }
 }
 
 void BotLODMgr::Shutdown()
